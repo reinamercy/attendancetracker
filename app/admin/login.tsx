@@ -1,56 +1,81 @@
-"use client"
-
 // app/admin/login.tsx
-import { useRouter } from "expo-router"
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import {
-  fetchSignInMethodsForEmail, // ← add
+  fetchSignInMethodsForEmail,
   getRedirectResult,
   GoogleAuthProvider,
-  linkWithCredential,
+  signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
-  signInWithRedirect, // ← add
+  signInWithRedirect,
   signOut,
-} from "firebase/auth"
-
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore"
-import React, { useState } from "react"
+} from 'firebase/auth'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import React, { useState } from 'react'
 import {
   Alert,
+  Animated,
+  Easing,
+  KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
-  // new:
-  Animated,
-  Easing,
-  KeyboardAvoidingView,
-  Pressable,
-} from "react-native"
-import { auth, db } from "../../firebase"
+} from 'react-native'
+import { auth, db } from '../../firebase'
+
+// -------- Google (Expo AuthSession) for native
+import * as Google from 'expo-auth-session/providers/google'
+import Constants from 'expo-constants'
+import * as WebBrowser from 'expo-web-browser'
+WebBrowser.maybeCompleteAuthSession()
+
+// ---------- Fallback IDs (in case extra.google is missing)
+const FALLBACK_GOOGLE_IDS = {
+  webClientId:
+    '488809231478-qta3q53tuoqudoek4cb5rvk828oha17a.apps.googleusercontent.com',
+  androidClientId:
+    '488809231478-u0mqgfdqrio28in8oi43ouqm9sqju43g.apps.googleusercontent.com',
+  iosClientId: '', // add later if you make an iOS client
+}
+
+function getGoogleIds() {
+  const cfgAny: any =
+    (Constants as any)?.expoConfig?.extra?.google ??
+    (Constants as any)?.manifest?.extra?.google ??
+    {}
+  return {
+    webClientId: cfgAny.webClientId || FALLBACK_GOOGLE_IDS.webClientId,
+    androidClientId: cfgAny.androidClientId || FALLBACK_GOOGLE_IDS.androidClientId,
+    iosClientId: cfgAny.iosClientId || FALLBACK_GOOGLE_IDS.iosClientId,
+  }
+}
+
 const show = (title: string, msg?: string) => {
-  if (Platform.OS === "web") {
-    // @ts-ignore
+  if (Platform.OS === 'web') {
     ;(window as any)?.alert?.(msg ? `${title}\n\n${msg}` : title)
   } else {
     Alert.alert(title, msg)
   }
 }
 
-// Only allow emails like ******2005@gmail.com
-const ALLOWED = /^[^@]*2005@gmail\.com$/
+// ✅ Only allow @citchennai.net (case-insensitive; subdomains allowed)
+const ALLOWED = /^[^@]+@(?:.*\.)?citchennai\.net$/i
 
 export default function AdminLogin() {
   const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const { next } = useLocalSearchParams<{ next?: string }>()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // ---- UI anim state
   const fade = React.useRef(new Animated.Value(0)).current
   const slide = React.useRef(new Animated.Value(18)).current
   const underline = React.useRef(new Animated.Value(0)).current
-  const [focused, setFocused] = React.useState<"email" | "password" | null>(null)
+  const [focused, setFocused] = React.useState<'email' | 'password' | null>(null)
 
   React.useEffect(() => {
     Animated.parallel([
@@ -65,75 +90,85 @@ export default function AdminLogin() {
     ]).start()
   }, [])
 
+  // ---- Google AuthSession (native)
+  const ids = getGoogleIds()
+  const PROXY_PATH = '@anonymous/attendence_hod' // works without Expo account login
+  const redirectUri = `https://auth.expo.dev/${PROXY_PATH}`
+
+  const [request, /*response*/, promptAsync] = Google.useAuthRequest({
+    clientId: ids.webClientId,
+    androidClientId: ids.androidClientId,
+    iosClientId: ids.iosClientId || undefined,
+    webClientId: ids.webClientId,
+    responseType: 'id_token',
+    scopes: ['openid', 'profile', 'email'],
+    redirectUri,
+    prompt: 'select_account consent',
+    extraParams: { prompt: 'select_account consent' },
+  } as any)
+
   const finishLogin = async (e: string) => {
     try {
       if (auth.currentUser?.uid) {
-        await setDoc(
-          doc(db, "admins", auth.currentUser.uid),
-          { email: e, uid: auth.currentUser.uid, createdAt: serverTimestamp() },
-          { merge: true },
-        )
+        await Promise.all([
+          setDoc(
+            doc(db, 'admins', auth.currentUser.uid),
+            { email: e, uid: auth.currentUser.uid, createdAt: serverTimestamp() },
+            { merge: true },
+          ),
+          setDoc(
+            doc(db, 'users', auth.currentUser.uid),
+            { uid: auth.currentUser.uid, email: e, role: 'admin', createdAt: serverTimestamp() },
+            { merge: true },
+          ),
+          setDoc(
+            doc(db, 'allowedUsers', e), // e is already lowercased
+            { email: e, createdAt: serverTimestamp() },
+            { merge: true }
+          ),
+        ])
       }
     } catch {}
-    router.replace({ pathname: "/admin/dashboard", params: { mentor: e } })
+    if (typeof next === 'string' && next) {
+      router.replace({ pathname: next as any })
+    } else {
+      router.replace({ pathname: '/admin/dashboard', params: { mentor: e } })
+    }
   }
 
-  React.useEffect(() => {
-    if (Platform.OS !== "web") return
-    ;(async () => {
-      const res = await getRedirectResult(auth)
-      if (!res) return
-      const e = (res.user.email ?? "").toLowerCase()
-      if (!ALLOWED.test(e)) {
-        await signOut(auth)
-        show("Access blocked", "Only teacher emails ending with 2005@gmail.com are allowed for now.")
-        return
-      }
-
-      await Promise.all([
-        setDoc(
-          doc(db, "admins", res.user.uid),
-          { email: e, uid: res.user.uid, createdAt: serverTimestamp() },
-          { merge: true },
-        ),
-        setDoc(
-          doc(db, "users", res.user.uid),
-          { uid: res.user.uid, email: e, role: "admin", createdAt: serverTimestamp() },
-          { merge: true },
-        ),
-        setDoc(doc(db, "allowedUsers", e), { email: e, createdAt: serverTimestamp() }, { merge: true }),
-      ])
-
-      return finishLogin(e)
-    })()
-  }, [])
-
+  // 🔧 CHANGED: force lowercase when reading allowlist
   const checkWhitelist = async (e: string) => {
-    const snap = await getDoc(doc(db, "allowedUsers", e))
+    const snap = await getDoc(doc(db, 'allowedUsers', e.toLowerCase()))
     return snap.exists()
   }
 
-  const isSafari = () =>
-    typeof navigator !== "undefined" &&
-    /Safari/i.test(navigator.userAgent) &&
-    !/Chrome|CriOS|FxiOS/i.test(navigator.userAgent)
+  // Handle Google redirect result on web (fixes flicker → stay)
+  React.useEffect(() => {
+    if (Platform.OS !== 'web') return
+    ;(async () => {
+      try {
+        const res = await getRedirectResult(auth)
+        if (!res) return
+        const e = (res.user.email ?? '').toLowerCase()
+        if (!ALLOWED.test(e)) {
+          await signOut(auth)
+          show('Access blocked', 'Only emails ending with @citchennai.net are allowed.')
+          return
+        }
+        await finishLogin(e)
+      } catch (err: any) {
+        show('Google sign-in failed', err?.message || String(err))
+      }
+    })()
+  }, [])
 
   const handleLogin = async () => {
     const e = email.trim().toLowerCase()
     const p = password.trim()
 
-    if (!e || !p) {
-      show("Missing", "Enter email & password")
-      return
-    }
-    if (!ALLOWED.test(e)) {
-      show("Access blocked", "Only teacher emails ending with 2005@gmail.com are allowed for now.")
-      return
-    }
-    if (p.length < 6) {
-      show("Password too short", "Use at least 6 characters.")
-      return
-    }
+    if (!e || !p) { show('Missing', 'Enter email & password'); return }
+    if (!ALLOWED.test(e)) { show('Access blocked', 'Only emails ending with @citchennai.net are allowed.'); return }
+    if (p.length < 6) { show('Password too short', 'Use at least 6 characters.'); return }
 
     try {
       setBusy(true)
@@ -142,125 +177,92 @@ export default function AdminLogin() {
       const ok = await checkWhitelist(e)
       if (!ok) {
         await signOut(auth)
-        show("Access denied", "This email is not registered. Please register first.")
+        show('Access denied', 'This email is not registered. Please register first.')
         return
       }
-
       return finishLogin(e)
     } catch (err: any) {
-      const code = err?.code || ""
+      const code = err?.code || ''
 
-      if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
+      if (code === 'auth/invalid-credential' || code === 'auth/user-not-found') {
         const methods = await fetchSignInMethodsForEmail(auth, e)
-        if (methods.includes("google.com") && !methods.includes("password")) {
-          show("This account is Google-only", "Login with Google, or go to Register to set a password.")
+        if (methods.includes('google.com') && !methods.includes('password')) {
+          show('Use "Continue with Google"', 'This account was created with Google. Use the Google button, or go to Register to link a password.')
           return
         }
-        show("Oops! User not found. Register to begin")
+        if (code === 'auth/user-not-found') { show('Oops! User not found. Register to begin'); return }
+        show('Wrong password', 'Check your password and try again.')
         return
       }
 
-      if (code === "auth/wrong-password") {
-        show("Wrong password", "Check your password and try again.")
-        return
-      }
-      if (code === "auth/too-many-requests") {
-        show("Too many attempts", "Please wait a minute and try again.")
-        return
-      }
+      if (code === 'auth/wrong-password') { show('Wrong password', 'Check your password and try again.'); return }
+      if (code === 'auth/too-many-requests') { show('Too many attempts', 'Please wait a minute and try again.'); return }
 
-      const msg = err instanceof Error ? err.message : String(err)
-      show("Login failed", msg)
+      show('Login failed', err?.message || String(err))
     } finally {
       setBusy(false)
     }
   }
 
   const handleGoogle = async () => {
-    if (Platform.OS !== "web") {
-      return Alert.alert("Not available", "Google sign-in works on Web now. Native coming next.")
-    }
-
-    const provider = new GoogleAuthProvider()
-    provider.setCustomParameters({ prompt: "select_account" })
-
     try {
-      // Safari? We’ll redirect instead of popup elsewhere via useEffect.
-      const res = await signInWithPopup(auth, provider)
-      const e = (res.user.email ?? "").toLowerCase()
-
-      if (!ALLOWED.test(e)) {
-        await signOut(auth)
-        show("Access blocked", "Only teacher emails ending with 2005@gmail.com are allowed for now.")
-        return
-      }
-
-      await Promise.all([
-        setDoc(
-          doc(db, "admins", res.user.uid),
-          { email: e, uid: res.user.uid, createdAt: serverTimestamp() },
-          { merge: true },
-        ),
-        setDoc(
-          doc(db, "users", res.user.uid),
-          { uid: res.user.uid, email: e, role: "admin", createdAt: serverTimestamp() },
-          { merge: true },
-        ),
-        setDoc(doc(db, "allowedUsers", e), { email: e, createdAt: serverTimestamp() }, { merge: true }),
-      ])
-
-      return finishLogin(e)
-    } catch (err: any) {
-      // 1) Popup blocked → redirect fallback
-      if (err?.code === "auth/popup-blocked" || err?.code === "auth/popup-closed-by-user") {
-        await signInWithRedirect(auth, provider)
-        return
-      }
-
-      // 2) Email/password account already exists → link Google to that SAME uid
-      if (err?.code === "auth/account-exists-with-different-credential") {
-        const emailInUse = (err?.customData?.email || "").toLowerCase()
-        const pendingCred = GoogleAuthProvider.credentialFromError?.(err)
-        if (emailInUse && pendingCred) {
-          const methods = await fetchSignInMethodsForEmail(auth, emailInUse)
-          if (methods.includes("password")) {
-            if (!password || password.length < 6) {
-              show("Finish linking", "Enter your password above, then press Google again to link.")
-              return
-            }
-            // sign in with existing password account, then link Google
-            const userCred = await signInWithEmailAndPassword(auth, emailInUse, password)
-            await linkWithCredential(userCred.user, pendingCred)
-
-            await Promise.all([
-              setDoc(
-                doc(db, "admins", userCred.user.uid),
-                { email: emailInUse, uid: userCred.user.uid, createdAt: serverTimestamp() },
-                { merge: true },
-              ),
-              setDoc(
-                doc(db, "users", userCred.user.uid),
-                { uid: userCred.user.uid, email: emailInUse, role: "admin", createdAt: serverTimestamp() },
-                { merge: true },
-              ),
-              setDoc(
-                doc(db, "allowedUsers", emailInUse),
-                { email: emailInUse, createdAt: serverTimestamp() },
-                { merge: true },
-              ),
-            ])
-
-            return finishLogin(emailInUse)
+      if (Platform.OS === 'web') {
+        const provider = new GoogleAuthProvider()
+        provider.setCustomParameters({
+          prompt: 'select_account consent',
+          hd: 'citchennai.net', // hint; still validate
+        })
+        try {
+          const cred = await signInWithPopup(auth, provider)
+          const e = (cred.user.email ?? '').toLowerCase()
+          if (!ALLOWED.test(e)) {
+            await signOut(auth)
+            Alert.alert('Access blocked', 'Only emails ending with @citchennai.net are allowed.')
+            return
           }
+          return finishLogin(e)
+        } catch (err: any) {
+          if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/popup-closed-by-user') {
+            await signInWithRedirect(auth, provider)
+            return
+          }
+          throw err
         }
       }
 
-      const msg = err instanceof Error ? err.message : String(err)
-      Alert.alert("Google sign-in failed", msg)
+      // ---- Native (Android/iOS) via AuthSession proxy
+      const res = await (promptAsync as any)({
+        useProxy: true,
+        projectNameForProxy: PROXY_PATH,
+        preferEphemeralSession: true,
+      })
+      if (res.type !== 'success') return
+
+      const idToken =
+        (res as any).params?.id_token ??
+        (res as any).authentication?.idToken
+      const accessToken = (res as any).authentication?.accessToken
+      if (!idToken && !accessToken) throw new Error('No token from Google')
+
+      const firebaseCred = GoogleAuthProvider.credential(
+        idToken || undefined,
+        accessToken || undefined
+      )
+      await signInWithCredential(auth, firebaseCred)
+
+      const e = (auth.currentUser?.email ?? '').toLowerCase()
+      if (!ALLOWED.test(e)) {
+        await signOut(auth)
+        Alert.alert('Access blocked', 'Only emails ending with @citchennai.net are allowed.')
+        return
+      }
+      return finishLogin(e)
+    } catch (err: any) {
+      Alert.alert('Google sign-in failed', err?.message || String(err))
     }
   }
 
-  const LoadingDots = ({ color = "#FFFFFF" }: { color?: string }) => {
+  const LoadingDots = ({ color = '#FFFFFF' }: { color?: string }) => {
     const d1 = React.useRef(new Animated.Value(0)).current
     const d2 = React.useRef(new Animated.Value(0)).current
     const d3 = React.useRef(new Animated.Value(0)).current
@@ -274,22 +276,16 @@ export default function AdminLogin() {
           ]),
         ).start()
 
-      makeLoop(d1, 0)
-      makeLoop(d2, 130)
-      makeLoop(d3, 260)
+      makeLoop(d1, 0); makeLoop(d2, 130); makeLoop(d3, 260)
     }, [])
 
     const dotStyle = (v: Animated.Value) => ({
       opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
-      transform: [
-        {
-          translateY: v.interpolate({ inputRange: [0, 1], outputRange: [0, -2] }),
-        },
-      ],
+      transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [0, -2] }) }],
     })
 
     return (
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
         <Animated.View style={[s.dot, dotStyle(d1), { backgroundColor: color }]} />
         <Animated.View style={[s.dot, dotStyle(d2), { backgroundColor: color }]} />
         <Animated.View style={[s.dot, dotStyle(d3), { backgroundColor: color }]} />
@@ -320,7 +316,7 @@ export default function AdminLogin() {
         onPress={onPress}
         onPressIn={() => onIn().start()}
         onPressOut={() => onOut().start()}
-        android_ripple={{ color: "rgba(14,7,122,0.12)" }}
+        android_ripple={{ color: 'rgba(14,7,122,0.12)' }}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         style={({ pressed }) => [{ opacity: disabled ? 0.6 : pressed ? 0.96 : 1 }, style]}
@@ -331,7 +327,7 @@ export default function AdminLogin() {
   }
 
   return (
-    <KeyboardAvoidingView style={s.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Animated.View style={[s.card, { opacity: fade, transform: [{ translateY: slide }] }]}>
         <Text style={s.title}>Admin / Mentor Login</Text>
         <Animated.View
@@ -344,13 +340,13 @@ export default function AdminLogin() {
         />
 
         <TextInput
-          placeholder="Email (e.g. abc2005@gmail.com)"
+          placeholder="Email (e.g. name@citchennai.net)"
           value={email}
           onChangeText={setEmail}
-          style={[s.input, focused === "email" && s.inputFocused]}
+          style={[s.input, focused === 'email' && s.inputFocused]}
           keyboardType="email-address"
           autoCapitalize="none"
-          onFocus={() => setFocused("email")}
+          onFocus={() => setFocused('email')}
           onBlur={() => setFocused(null)}
           accessibilityLabel="Email"
           placeholderTextColor="#6b7280"
@@ -359,9 +355,9 @@ export default function AdminLogin() {
           placeholder="Password"
           value={password}
           onChangeText={setPassword}
-          style={[s.input, focused === "password" && s.inputFocused]}
+          style={[s.input, focused === 'password' && s.inputFocused]}
           secureTextEntry
-          onFocus={() => setFocused("password")}
+          onFocus={() => setFocused('password')}
           onBlur={() => setFocused(null)}
           accessibilityLabel="Password"
           placeholderTextColor="#6b7280"
@@ -369,22 +365,22 @@ export default function AdminLogin() {
 
         <ScaleButton onPress={handleLogin} disabled={busy} style={s.button} accessibilityLabel="Login">
           <View style={s.buttonInner}>
-            <Text style={s.buttonText}>{busy ? "Working" : "Login"}</Text>
+            <Text style={s.buttonText}>{busy ? 'Working' : 'Login'}</Text>
             {busy && <LoadingDots />}
           </View>
         </ScaleButton>
 
         <ScaleButton
           onPress={handleGoogle}
-          disabled={busy}
+          disabled={busy || !request}
           style={[s.ghostBtn, { marginTop: 12 }]}
-          accessibilityLabel="Continue with Google on Web"
+          accessibilityLabel="Continue with Google"
         >
-          <Text style={s.ghostTxt}>Continue with Google (Web)</Text>
+          <Text style={s.ghostTxt}>Continue with Google</Text>
         </ScaleButton>
 
         <Pressable
-          onPress={() => router.replace("/admin/register")}
+          onPress={() => router.replace('/admin/register')}
           accessibilityRole="link"
           accessibilityLabel="Create a new account"
           style={s.linkBtn}
@@ -398,13 +394,13 @@ export default function AdminLogin() {
 
 const s = StyleSheet.create({
   card: {
-    width: "100%",
+    width: '100%',
     maxWidth: 560,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
     paddingVertical: 22,
     borderRadius: 16,
-    shadowColor: "#0f172a",
+    shadowColor: '#0f172a',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
@@ -412,56 +408,56 @@ const s = StyleSheet.create({
   },
   underline: {
     height: 3,
-    width: "28%",
-    backgroundColor: "rgb(14, 7, 122)",
+    width: '28%',
+    backgroundColor: 'rgb(14, 7, 122)',
     borderRadius: 3,
     marginTop: 4,
     marginBottom: 18,
     transform: [{ scaleX: 0 }],
-    transformOrigin: "left",
+    transformOrigin: 'left',
   },
   input: {
-    width: "100%",
+    width: '100%',
     maxWidth: 520,
     height: 54,
     borderWidth: 2,
-    borderColor: "rgb(14, 7, 122)",
-    backgroundColor: "#FFFFFF",
-    color: "#0f172a",
+    borderColor: 'rgb(14, 7, 122)',
+    backgroundColor: '#FFFFFF',
+    color: '#0f172a',
     borderRadius: 14,
     paddingHorizontal: 16,
     marginBottom: 16,
   },
   inputFocused: {
-    borderColor: "rgb(14, 7, 122)",
-    shadowColor: "rgb(14, 7, 122)",
+    borderColor: 'rgb(14, 7, 122)',
+    shadowColor: 'rgb(14, 7, 122)',
     shadowOpacity: 0.15,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   button: {
-    width: "100%",
+    width: '100%',
     maxWidth: 520,
     height: 54,
     borderRadius: 14,
-    alignSelf: "center",
-    justifyContent: "center",
+    alignSelf: 'center',
+    justifyContent: 'center',
     marginTop: 4,
     marginBottom: 14,
-    backgroundColor: "rgb(14, 7, 122)",
+    backgroundColor: 'rgb(14, 7, 122)',
   },
   buttonInner: {
-    flexDirection: "row",
+    flexDirection: 'row',
     gap: 10,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 12,
   },
   buttonText: {
-    color: "#FFFFFF",
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: '700',
   },
   dot: {
     width: 6,
@@ -469,38 +465,38 @@ const s = StyleSheet.create({
     borderRadius: 3,
   },
   ghostBtn: {
-    width: "100%",
+    width: '100%',
     maxWidth: 520,
     height: 54,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#FFFFFF",
-    alignSelf: "center",
-    alignItems: "center",
-    justifyContent: "center",
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 12,
   },
   ghostTxt: {
-    textAlign: "center",
-    color: "#0f172a",
+    textAlign: 'center',
+    color: '#0f172a',
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 24,
     paddingVertical: 40,
-    backgroundColor: "#F6F8FC",
+    backgroundColor: '#F6F8FC',
   },
-  linkBtn: { paddingVertical: 10, marginTop: 20, alignItems: "center" },
-  linkTxt: { textAlign: "center", color: "#0f172a", opacity: 0.8 },
+  linkBtn: { paddingVertical: 10, marginTop: 20, alignItems: 'center' },
+  linkTxt: { textAlign: 'center', color: '#0f172a', opacity: 0.8 },
   title: {
     fontSize: 24,
-    fontWeight: "800",
-    color: "#0f172a",
-    textAlign: "left",
+    fontWeight: '800',
+    color: '#0f172a',
+    textAlign: 'left',
   },
 })

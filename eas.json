@@ -1,20 +1,16 @@
 {
-  "cli": {
-    "version": ">= 16.18.0",
-    "appVersionSource": "remote"
-  },
+  "cli": { "version": ">= 10.0.0" },
   "build": {
-    "development": {
-      "distribution": "internal"
-    },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "ios": { "simulator": false },
+      "env": { "NPM_CONFIG_LEGACY_PEER_DEPS": "true" }
     },
     "production": {
-      "autoIncrement": true
+      "distribution": "store",
+      "env": { "NPM_CONFIG_LEGACY_PEER_DEPS": "true" }
     }
   },
-  "submit": {
-    "production": {}
-  }
+  "submit": { "production": {} }
 }

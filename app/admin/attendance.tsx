@@ -63,13 +63,14 @@ const MUTED_BG = "#F5F7FF";
 
 // Gradients
 // lighter shades (like HOD)
-const PRESENT_GRAD = ["#bbf7d0", "#86efac"]; // light green
-const ABSENT_GRAD  = ["#fecaca", "#fca5a5"]; // light red
-const TOTAL_GRAD   = ["#e9d5ff", "#bae6fd"]; // soft purple -> soft sky
+const PRESENT_GRAD = ["#bbf7d0", "#86efac"] as const; // light green
+const ABSENT_GRAD  = ["#fecaca", "#fca5a5"] as const; // light red
+const TOTAL_GRAD   = ["#e9d5ff", "#bae6fd"] as const; // soft purple -> soft sky
+const LATE_GRAD    = ["#fef9c3", "#fde68a"] as const; // soft yellow
 
-const BTN_GRAD = [NAVY, "#4c4cff"]; // navy -> bright blue
-const DL_GRAD = ["#0ea5e9", "#38bdf8"]; // sky
-const BG_GRAD = ["#EEF2FF", "#F5FBFF"]; // page bg
+const BTN_GRAD = [NAVY, "#4c4cff"] as const; // navy -> bright blue
+const DL_GRAD = ["#0ea5e9", "#38bdf8"] as const; // sky
+const BG_GRAD = ["#EEF2FF", "#F5FBFF"] as const; // page bg
 
 const norm = (x: any) => (x ?? "").toString().trim().toUpperCase();
 // Natural compare for roll numbers like "23CS103"
@@ -115,20 +116,24 @@ const fetchClassMeta = async (clsCanon: string) => {
 };
 
 const decodeMark = (mark: any) => {
-  if (!mark) return { present: false, absent: false };
-  if (typeof mark === "string") return { present: mark === "P", absent: mark === "A" };
-  return { present: !!mark.present, absent: !!mark.absent };
+  if (!mark) return { present: false, absent: false, late: false };
+  if (typeof mark === "string") {
+    return { present: mark === "P", absent: mark === "A", late: mark === "L" };
+  }
+  return { present: !!mark.present, absent: !!mark.absent, late: !!mark.late };
 };
 
-const computeCounts = (arr: { present: boolean; absent: boolean }[]) => {
-  let present = 0,
-    absent = 0;
+
+const computeCounts = (arr: { present: boolean; absent: boolean; late?: boolean }[]) => {
+  let present = 0, absent = 0, late = 0;
   for (const s of arr) {
     if (s.present) present++;
     else if (s.absent) absent++;
+    else if (s.late) late++;
   }
-  return { present, absent };
+  return { present, absent, late };
 };
+
 
 const istDateAt = (dateKey: string, hour: number, minute = 0) =>
   new Date(
@@ -171,6 +176,7 @@ interface Student {
   CLASS_CANON?: string; // normalized key
   present: boolean;
   absent: boolean;
+  late: boolean;
   mentor?: string;
 }
 
@@ -238,6 +244,12 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   // 🔔 Master window state
   const [schedule, setSchedule] = useState<AttendanceSchedule | null>(null);
   const [schedLoading, setSchedLoading] = useState(true);
+
+  // Select-all header flags (derived each render)
+const allPresent = useMemo(() => students.length > 0 && students.every(s => s.present), [students]);
+const allAbsent  = useMemo(() => students.length > 0 && students.every(s => s.absent),  [students]);
+const allLate    = useMemo(() => students.length > 0 && students.every(s => s.late),    [students]);
+
 
   // layout
   const { width } = useWindowDimensions();
@@ -341,6 +353,7 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
             key: d.id,
             present: !!dat.present,
             absent: !!dat.absent,
+            late: !!dat.late,
           } as Student;
         });
       } catch {}
@@ -355,9 +368,10 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
       }
 
       if (!snap.exists()) {
-        setStudents(dedupeByRoll(baseStudents).map((s) => ({ ...s, present: false, absent: false })));
-        return;
-      }
+  setStudents(dedupeByRoll(baseStudents).map((s) => ({ ...s, present: false, absent: false, late: false })));
+  return;
+}
+
 
       const data = snap.data() as any;
       const marks = data?.marks || {};
@@ -367,7 +381,7 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
         base.map((s) => {
           const byRoll = marks[norm(s.ROLLNO)];
           const decoded = decodeMark(byRoll);
-          return { ...s, present: decoded.present, absent: decoded.absent };
+          return { ...s, present: decoded.present, absent: decoded.absent, late: decoded.late };
         })
       );
     };
@@ -466,15 +480,14 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
     setSavingDay(true);
     try {
       // marks
-      const marks: Record<string, { present: boolean; absent: boolean } | "P" | "A"> = {};
-      for (const s of students) {
-        const r = norm(s.ROLLNO);
-        if (!r) continue;
-        marks[r] = { present: !!s.present, absent: !!s.absent };
-      }
+const marks: Record<string, { present: boolean; absent: boolean; late: boolean } | "P" | "A" | "L"> = {};
+for (const s of students) {
+  const r = norm(s.ROLLNO);
+  if (!r) continue;
+  marks[r] = { present: !!s.present, absent: !!s.absent, late: !!s.late };
+}
 
-      // totals
-      const { present, absent } = computeCounts(students);
+const { present, absent, late } = computeCounts(students);
 
       // meta (ensure section + year)
       const meta = await fetchClassMeta(CLS_CANON);
@@ -508,7 +521,7 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
           lockUntil: lockUntilIso,
           lockUntilTs,
           isLocked: false,
-          counts: { present, absent },
+          counts: { present, absent, late },
           marks,
         },
         { merge: true }
@@ -533,86 +546,90 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   };
 
   // Excel export (unchanged)
-  const downloadAttendanceExcel = () => {
-    if (!students.length) {
-      Alert.alert("No data", "No students to export.");
-      return;
+const downloadAttendanceExcel = () => {
+  if (!students.length) {
+    Alert.alert("No data", "No students to export.");
+    return;
+  }
+
+  const rows: any[][] = [["SNO", "NAME", "ROLLNO", "EMAIL", "CLASS", "DATE", "Present", "Absent", "Late"]];
+  students.forEach((s, idx) => {
+    rows.push([
+      idx + 1,
+      s.NAME,
+      s.ROLLNO,
+      s.EMAIL,
+      s.CLASS,
+      selectedDate,
+      s.present ? "P" : "",
+      s.absent ? "A" : "",
+      s.late ? "L" : "",
+    ]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  (ws as any)["!cols"] = [
+    { wch: 5 },  { wch: 22 }, { wch: 12 }, { wch: 26 }, { wch: 10 },
+    { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+  ];
+
+  const header = ["A1","B1","C1","D1","E1","F1","G1","H1","I1"];
+  header.forEach((addr) => {
+    if ((ws as any)[addr]) {
+      (ws as any)[addr].s = {
+        font: { bold: true },
+        alignment: { horizontal: "center", vertical: "center" },
+      };
     }
+  });
 
-    const rows: any[][] = [["SNO", "NAME", "ROLLNO", "EMAIL", "CLASS", "DATE", "Present", "Absent"]];
-    students.forEach((s, idx) => {
-      rows.push([
-        idx + 1,
-        s.NAME,
-        s.ROLLNO,
-        s.EMAIL,
-        s.CLASS,
-        selectedDate,
-        s.present ? "P" : "",
-        s.absent ? "A" : "",
-      ]);
-    });
+  students.forEach((s, idx) => {
+    const r = idx + 2;
+    const presentAddr = `G${r}`;
+    const absentAddr  = `H${r}`;
+    const lateAddr    = `I${r}`;
 
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-
-    (ws as any)["!cols"] = [
-      { wch: 5 },
-      { wch: 22 },
-      { wch: 12 },
-      { wch: 26 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 10 },
-      { wch: 10 },
-    ];
-
-    const header = ["A1", "B1", "C1", "D1", "E1", "F1", "G1", "H1"];
-    header.forEach((addr) => {
-      if ((ws as any)[addr]) {
-        (ws as any)[addr].s = {
-          font: { bold: true },
-          alignment: { horizontal: "center", vertical: "center" },
-        };
-      }
-    });
-
-    students.forEach((s, idx) => {
-      const r = idx + 2;
-      const presentAddr = `G${r}`;
-      const absentAddr = `H${r}`;
-
-      if ((ws as any)[presentAddr] && s.present) {
-        (ws as any)[presentAddr].s = {
-          fill: { patternType: "solid", fgColor: { rgb: "92D050" } },
-          font: { color: { rgb: "FFFFFF" }, bold: true },
-          alignment: { horizontal: "center" },
-        };
-      }
-      if ((ws as any)[absentAddr] && s.absent) {
-        (ws as any)[absentAddr].s = {
-          fill: { patternType: "solid", fgColor: { rgb: "FF0000" } },
-          font: { color: { rgb: "FFFFFF" }, bold: true },
-          alignment: { horizontal: "center" },
-        };
-      }
-    });
-
-    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
-
-    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    if (Platform.OS === "web") {
-      const blob = new Blob([wbout], { type: "application/octet-stream" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${LEGACY_CANON || "class"}_${selectedDate}_attendance.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } else {
-      Alert.alert("Download", "Web download ready. For native, we can add FileSystem + Share next.");
+    if ((ws as any)[presentAddr] && s.present) {
+      (ws as any)[presentAddr].s = {
+        fill: { patternType: "solid", fgColor: { rgb: "92D050" } },
+        font: { color: { rgb: "FFFFFF" }, bold: true },
+        alignment: { horizontal: "center" },
+      };
     }
-  };
+    if ((ws as any)[absentAddr] && s.absent) {
+      (ws as any)[absentAddr].s = {
+        fill: { patternType: "solid", fgColor: { rgb: "FF0000" } },
+        font: { color: { rgb: "FFFFFF" }, bold: true },
+        alignment: { horizontal: "center" },
+      };
+    }
+    if ((ws as any)[lateAddr] && s.late) {
+      (ws as any)[lateAddr].s = {
+        fill: { patternType: "solid", fgColor: { rgb: "FFD966" } }, // yellow
+        font: { color: { rgb: "000000" }, bold: true },
+        alignment: { horizontal: "center" },
+      };
+    }
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+
+  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  if (Platform.OS === "web") {
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${LEGACY_CANON || "class"}_${selectedDate}_attendance.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } else {
+    Alert.alert("Download", "Web download ready. For native, we can add FileSystem + Share next.");
+  }
+};
+
 
   // Import Excel (native/web) — de-duped
   const importExcelNative = async () => {
@@ -642,6 +659,7 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
         CLASS_CANON: CLS_CANON,
         present: false,
         absent: false,
+        late: false,
         mentor: MENTOR,
       }));
       setStudents(dedupeByRoll(list));
@@ -672,6 +690,7 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
           CLASS_CANON: CLS_CANON,
           present: false,
           absent: false,
+          late: false,
           mentor: MENTOR,
         }));
         setStudents(dedupeByRoll(list));
@@ -682,18 +701,32 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
     reader.readAsDataURL(file);
   };
 
-  const toggle = (key: string, field: "present" | "absent") =>
-    setStudents((prev) =>
-      prev.map((s) =>
-        s.key === key
-          ? {
-              ...s,
-              [field]: !s[field],
-              ...(field === "present" ? { absent: false } : { present: false }),
-            }
-          : s
-      )
+  const toggle = (key: string, field: "present" | "absent" | "late") =>
+  setStudents((prev) =>
+    prev.map((s) =>
+      s.key === key
+        ? field === "present"
+          ? { ...s, present: !s.present, absent: false, late: false }
+          : field === "absent"
+          ? { ...s, present: false, absent: !s.absent, late: false }
+          : { ...s, present: false, absent: false, late: !s.late }
+        : s
+    )
+  );
+const selectAll = (field: "present" | "absent" | "late") => {
+  if (!canEditAttendance) return;
+  setStudents((prev) => {
+    const every = prev.length > 0 && prev.every((s) => s[field]);
+    return prev.map((s) =>
+      field === "present"
+        ? { ...s, present: !every, absent: false, late: false }
+        : field === "absent"
+        ? { ...s, present: false, absent: !every, late: false }
+        : { ...s, present: false, absent: false, late: !every }
     );
+  });
+};
+
 
   const deleteStudent = (key: string) => setStudents((prev) => prev.filter((s) => s.key !== key));
 
@@ -715,6 +748,7 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
       CLASS_CANON: CLS_CANON,
       present: false,
       absent: false,
+      late: false,
       mentor: MENTOR,
     };
 
@@ -725,11 +759,13 @@ const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
     setShowAddModal(false);
   };
 
-  const COLUMNS = ["SNO", "NAME", "ROLLNO", "EMAIL", "CLASS", "Present", "Absent", "Delete"];
+  const COLUMNS = ["SNO", "NAME", "ROLLNO", "EMAIL", "CLASS", "Present", "Absent", "Late", "Delete"];
 
   // derived UI-only counts
   const presentCount = students.filter((s) => s.present).length;
   const absentCount = students.filter((s) => s.absent).length;
+  const lateCount = students.filter((s) => s.late).length;
+
 const sortedStudents = useMemo(() => {
   const arr = [...students];
   arr.sort((s1, s2) => {
@@ -756,7 +792,7 @@ const sortedStudents = useMemo(() => {
       const auth = getAuth();
       await signOut(auth);
     } catch {}
-    router.replace("/login");
+    router.replace({ pathname: "/admin/login" });
   };
 
   /* ------------------------- UI (scroll enabled) ------------------------- */
@@ -897,6 +933,11 @@ const sortedStudents = useMemo(() => {
                 <Text style={s.statValue}>{absentCount}</Text>
               </View>
               <View style={s.statCard}>
+                <LinearGradient colors={LATE_GRAD} style={s.statGrad} />
+                <Text style={s.statTitle}>Late</Text>
+                <Text style={s.statValue}>{lateCount}</Text>
+              </View>
+              <View style={s.statCard}>
                 <LinearGradient colors={TOTAL_GRAD} style={s.statGrad} />
                 <Text style={s.statTitle}>Total</Text>
                 <Text style={s.statValue}>{students.length}</Text>
@@ -910,59 +951,64 @@ const sortedStudents = useMemo(() => {
   <Text style={s.sectionTitle}>Student Attendance</Text>
 
 
-          <View style={s.tableCenterWrap}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator
-              style={s.grid}
-              contentContainerStyle={{ alignItems: "center" }} // center contents vertically inside the scroll area
-            >
+          <View style={s.tableShell}>
+<ScrollView
+  horizontal
+  showsHorizontalScrollIndicator
+  style={s.grid}
+  contentContainerStyle={s.gridContent}
+>
+
               <View style={{ alignSelf: "center" }}>
                 {/* Header */}
                 <View style={s.rowHeader}>
-                  <View style={s.rowHeader}>
-  {COLUMNS.map((col, i) => {
-    const baseStyle = [
-      s.cell,
-      s.headerCell,
-      i === 0 && s.snoCell,
-      i === 1 && s.nameCell,
-      i === 2 && s.rollCell,
-      i === 3 && s.emailCell,
-      i === 4 && s.classCell,
-      (i === 5 || i === 6) && s.checkCell,
-      i === 7 && s.delCell,
-    ];
+{COLUMNS.map((col, i) => {
+  const baseStyle = [
+    s.cell, s.headerCell,
+    i === 0 && s.snoCell,
+    i === 1 && s.nameCell,
+    i === 2 && s.rollCell,
+    i === 3 && s.emailCell,
+    i === 4 && s.classCell,
+    (i === 5 || i === 6 || i === 7) && s.checkCell, // P/A/L
+    i === 8 && s.delCell, // Delete shifts right
+  ];
 
-    // Special header for ROLLNO: toggle sort and show arrow
-    if (col === "ROLLNO") {
-      return (
-        <TouchableOpacity
-          key="ROLLNO"
-          onPress={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-          style={[...baseStyle, { flexDirection: "row", alignItems: "center", justifyContent: "center" }]}
-          accessibilityRole="button"
-          accessibilityLabel={`Sort by roll number, currently ${sortDir === "asc" ? "ascending" : "descending"}`}
-        >
-          <Text style={s.headerText}>ROLLNO</Text>
-          <MaterialCommunityIcons
-            name={sortDir === "asc" ? "arrow-up" : "arrow-down"}
-            size={16}
-            color="#fff"
-            style={s.thArrow}
-          />
-        </TouchableOpacity>
-      );
-    }
-
-    // All other headers
+  // Sortable ROLLNO
+  if (col === "ROLLNO") {
     return (
-      <View key={col} style={baseStyle}>
+      <TouchableOpacity
+        key="ROLLNO"
+        onPress={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+        style={[...baseStyle, { flexDirection: "row", alignItems: "center", justifyContent: "center" }]}
+        accessibilityRole="button"
+        accessibilityLabel={`Sort by roll number, currently ${sortDir === "asc" ? "ascending" : "descending"}`}
+      >
+        <Text style={s.headerText}>ROLLNO</Text>
+        <MaterialCommunityIcons name={sortDir === "asc" ? "arrow-up" : "arrow-down"} size={16} color="#fff" style={s.thArrow} />
+      </TouchableOpacity>
+    );
+  }
+
+  // Select-all checkboxes for Present/Absent/Late
+  if (col === "Present" || col === "Absent" || col === "Late") {
+    const value = col === "Present" ? allPresent : col === "Absent" ? allAbsent : allLate;
+    const onChange = () => selectAll(col === "Present" ? "present" : col === "Absent" ? "absent" : "late");
+    return (
+      <View key={col} style={[...baseStyle, { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" }]}>
         <Text style={s.headerText}>{col}</Text>
+        <Checkbox value={value} onValueChange={onChange} disabled={!canEditAttendance} />
       </View>
     );
-  })}
-</View>
+  }
+
+  // Default header cell
+  return (
+    <View key={col} style={baseStyle}>
+      <Text style={s.headerText}>{col}</Text>
+    </View>
+  );
+})}
 
                 </View>
 
@@ -987,6 +1033,9 @@ const sortedStudents = useMemo(() => {
                     </View>
                     <View style={[s.cell, s.checkCell, s.centerCell]}>
                       <Checkbox value={stu.absent} onValueChange={() => toggle(stu.key, "absent")} disabled={!canEditAttendance} />
+                    </View>
+                    <View style={[s.cell, s.checkCell, s.centerCell]}>
+                      <Checkbox value={stu.late} onValueChange={() => toggle(stu.key, "late")} disabled={!canEditAttendance} />
                     </View>
                     <View style={[s.cell, s.delCell, s.centerCell]}>
                       <TouchableOpacity onPress={() => deleteStudent(stu.key)} accessibilityLabel="Delete student">
@@ -1091,7 +1140,6 @@ const s = StyleSheet.create({
   rowSplit: { flexDirection: "row" },
 col70: { flex:7, alignSelf:"flex-start" },
 col30: { flex:3, alignSelf:"flex-start" },
-statsColumn: { width:"100%", flexDirection:"column", gap:25, marginTop: 0 },
 
   stack: { width: "100%" },
 
@@ -1166,9 +1214,9 @@ statsColumn: { width:"100%", flexDirection:"column", gap:25, marginTop: 0 },
   statCard: {
     position: "relative",
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
     overflow: "hidden",
-    minHeight: 92,
+    minHeight: 62,
     shadowColor: "#0b1220",
     shadowOpacity: 0.06,
     shadowRadius: 12,
@@ -1185,7 +1233,6 @@ statValue: { color: "#0f172a", fontSize: 28, fontWeight: "900" },
 
   // Table
   tableCenterWrap: { alignItems: "center" }, // centers the whole table block inside the card
-  grid: { flex: 1, alignSelf: "center" },
   rowHeader: { flexDirection: "row", backgroundColor: NAVY, borderBottomWidth: 1, borderColor: "#E2E8F0", alignSelf: "center" },
   row: { flexDirection: "row", borderBottomWidth: 1, borderColor: "#E2E8F0", alignSelf: "center" },
   rowAlt: { backgroundColor: "#F3F6FF" },
@@ -1196,11 +1243,29 @@ statValue: { color: "#0f172a", fontSize: 28, fontWeight: "900" },
 
   // Column sizing
   snoCell: { minWidth: 64, alignItems: "center" },
-  checkCell: { minWidth: 76, alignItems: "center" },
-  delCell: { minWidth: 68, alignItems: "center" },
-  nameCell: { minWidth: 280, flexGrow: 1.4 },
-  rollCell: { minWidth: 160, flexGrow: 1.1 },
-  emailCell: { minWidth: 450 },
+checkCell: { minWidth: 120, alignItems: "center" }, // more breathing room
+delCell:   { minWidth: 80,  alignItems: "center" },
+tableShell: {
+  width: "100%",
+  borderRadius: 12,
+  overflow: "hidden",              // clip header/background inside card
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+  alignSelf: "center",
+},
+grid: {
+  // keep existing props, then ensure it never exceeds the card
+  flex: 1,
+  alignSelf: "stretch",
+  maxWidth: "100%",
+},
+gridContent: {
+  alignItems: "stretch",
+},
+
+  nameCell: { minWidth: 260, flexGrow: 1.4 },
+  rollCell: { minWidth: 100, flexGrow: 1.1 },
+  emailCell: { minWidth: 390 },
   classCell: { minWidth: 150, alignItems: "flex-start" },
 
   // replaced emoji with icon; keep spacing via size=20

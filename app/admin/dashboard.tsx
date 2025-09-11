@@ -1,17 +1,16 @@
 // app/admin/dashboard.tsx — Merged UI (from old Admin UI) + New Logic (HOD + legacy support)
+import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   addDoc,
   collection,
-  collectionGroup,
   deleteDoc,
   doc,
   getDocs,
   query,
-  where,
+  where
 } from 'firebase/firestore'
-import { MaterialCommunityIcons } from '@expo/vector-icons'
 
 import React, { useEffect, useMemo, useState } from 'react'
 import {
@@ -34,7 +33,8 @@ import { auth, db } from '../../firebase'
 // Types & constants
 // -------------------------
 type ClassItem = { id: string; name: string; _raw?: any }
-const ALLOWED = /^[^@]*2005@gmail\.com$/
+// 🔁 CHANGED: allow only @citchennai.net (case-insensitive, subdomains allowed)
+const ALLOWED = /^[^@]+@(?:.*\.)?citchennai\.net$/i
 
 const toLower = (s: string | null | undefined) => (s ?? '').toLowerCase()
 
