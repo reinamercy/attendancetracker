@@ -220,19 +220,7 @@ export default function HODLogin() {
             </Animated.View>
           </Pressable>
 
-          <Pressable
-            onPress={handleGoogleWeb}
-            onPressIn={() => pressIn(googleScale)}
-            onPressOut={() => pressOut(googleScale)}
-            disabled={busy}
-            accessibilityLabel="Continue with Google on web"
-            accessibilityHint="Opens Google sign-in popup on web"
-            style={({ pressed }) => [s.pressableBase, pressed && s.pressed]}
-          >
-            <Animated.View style={[s.ghostBtn, { transform: [{ scale: googleScale }] }, busy && { opacity: 0.9 }]}>
-              <Text style={s.ghostTxt}>Continue with Google (Web)</Text>
-            </Animated.View>
-          </Pressable>
+
 
           <Pressable
             onPress={() => show("Create account", "Ask the admin to enable sign-ups.")}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "expo-router"
 import {
   Animated,
@@ -13,7 +13,9 @@ import {
 } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import { Feather } from "@expo/vector-icons"
-
+import { onAuthStateChanged } from "firebase/auth"
+import { auth } from "@/firebase"
+import { SUPERMAIL } from "@/constants/app"
 const COLORS = {
   primary: "#2563EB", // blue-600
   dark: "#0B1220", // near-black
@@ -173,7 +175,7 @@ export default function HodHome() {
   const titleOpacity = useRef(new Animated.Value(0)).current
   const titleTranslateY = useRef(new Animated.Value(8)).current
   const underlineProgress = useRef(new Animated.Value(0)).current
-
+const [ready, setReady] = useState(false)
   useEffect(() => {
     Animated.sequence([
       Animated.parallel([
@@ -213,26 +215,40 @@ export default function HodHome() {
       ]),
     ]).start()
   }, [containerOpacity, containerTranslateY, titleOpacity, titleTranslateY, underlineProgress])
+useEffect(() => {
+    // THE CODE CHANGED PART (auth guard)
+    const unsub = onAuthStateChanged(auth, (u) => {
+      const mail = (u?.email || "").toLowerCase()
+      if (!u || mail !== SUPERMAIL) {
+        router.replace("/hod/login")     // not allowed -> send to login
+      } else {
+        setReady(true)                   // allowed -> render portal
+      }
+    })
+    return unsub
+    // THE CODE CHANGED PART (auth guard)
+  }, [router])
 
-  const buttons = useMemo(
-    () => [
-      {
-        label: "Classes",
-        icon: "users" as const,
-        bg: '#000080',
-        text: COLORS.white,
-        action: () => router.push("/hod/classes"),
-      },
-      {
-        label: "Attendance",
-        icon: "check-square" as const,
-        bg: COLORS.dark,
-        text: COLORS.white,
-        action: () => router.push("/hod/attendence"),
-      },
-    ],
-    [router],
-  )
+  // prevent flicker while checking auth
+  if (!ready) {
+    return <View style={{ flex: 1, backgroundColor: COLORS.white }} />
+  }
+const buttons = [
+  {
+    label: "Classes",
+    icon: "users" as const,
+    bg: "#000080",
+    text: COLORS.white,
+    action: () => router.push("/hod/classes"),
+  },
+  {
+    label: "Attendance",
+    icon: "check-square" as const,
+    bg: COLORS.dark,
+    text: COLORS.white,
+    action: () => router.push("/hod/attendence"),
+  },
+]
 
   return (
     <View style={[styles.screen, { backgroundColor: COLORS.white }]}>

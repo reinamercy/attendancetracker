@@ -2,7 +2,7 @@
 
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
-import { useRouter, useNavigation } from "expo-router"
+import { useNavigation, useRouter } from "expo-router"
 import { getAuth, signOut } from "firebase/auth"
 import {
   addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query,
@@ -60,12 +60,14 @@ const mentorsToEmails = (mentors: Mentor[]) =>
   Array.from(new Set((mentors || []).map((m) => (m.email || "").trim().toLowerCase()).filter(Boolean)))
 
 /* --------------------------- subtle year tones --------------------------- */
-const YEAR_TONE: Record<1 | 2 | 3 | 4, { bg: string; border: string; text: string; dot: string }> = {
-  1: { bg: "#F0F9FF", border: "#BAE6FD", text: "#0C4A6E", dot: "#38BDF8" }, // sky
-  2: { bg: "#F0FDF4", border: "#BBF7D0", text: "#14532D", dot: "#34D399" }, // green
-  3: { bg: "#FAF5FF", border: "#E9D5FF", text: "#4C1D95", dot: "#A78BFA" }, // purple
-  4: { bg: "#FFF7ED", border: "#FED7AA", text: "#7C2D12", dot: "#F59E0B" }, // amber
+const YEAR_TONE: Record<1 | 2 | 3 | 4, { bg: string; border: string; text: string; dot: string; activeBg: string }> = {
+  1: { bg: "#F0F9FF", border: "#BAE6FD", text: "#0C4A6E", dot: "#38BDF8", activeBg: "#38BDF8" }, // medium sky (cyan-400)
+  2: { bg: "#F0FDF4", border: "#BBF7D0", text: "#14532D", dot: "#34D399", activeBg: "#34D399" }, // medium green (emerald-400)
+  3: { bg: "#FAF5FF", border: "#E9D5FF", text: "#4C1D95", dot: "#A78BFA", activeBg: "#A78BFA" }, // medium purple (violet-400)
+  4: { bg: "#FFF7ED", border: "#FED7AA", text: "#7C2D12", dot: "#F59E0B", activeBg: "#F59E0B" }, // medium amber (orange-400)
 }
+
+
 
 /* --------------------------- tiny UI primitives --------------------------- */
 
@@ -476,7 +478,7 @@ export default function HodClassesScreen() {
       const auth = getAuth()
       await signOut(auth)
     } catch {}
-    router.replace("/login")
+    router.replace("/hod/login")
   }
 
   /* --------------------------- render --------------------------- */
@@ -518,7 +520,26 @@ export default function HodClassesScreen() {
 
       <ScrollView contentContainerStyle={[s.container, isPhone && { padding: 12 }]}>
         {/* ---- TOP ROW: Manage card (left) + Year panel (right) ---- */}
-        <View style={[s.topRow, isPhone && { gap: 12 }]}>
+        {/* THE CODE CHANGED PART — stack + tighter gaps on phone */}
+        <View style={[s.topRow, isPhone && { flexDirection: "column", gap: 10 }]}>
+          {/* THE CODE CHANGED PART — mobile year selector */}
+          {!isWide && (
+          <View style={[s.yearBarMobile, { borderColor: YEAR_TONE[selectedYear].border, backgroundColor: YEAR_TONE[selectedYear].bg, alignItems: "center" }]}>
+            <Text style={[s.yearBarTitle, { color: YEAR_TONE[selectedYear].text }]}>Manage Years</Text>
+            <View style={s.yearButtonsMobile}>
+              {[1, 2, 3, 4].map((year) => (
+                <Pill
+                  key={year}
+                  label={`${year} yr`}
+                  active={selectedYear === (year as 1 | 2 | 3 | 4)}
+                  onPress={() => setSelectedYear(year as 1 | 2 | 3 | 4)}
+                  tint={YEAR_TONE[year as 1 | 2 | 3 | 4]}
+                />
+              ))}
+            </View>
+          </View>
+        )}
+
           {/* LEFT: Manage Years (only on wide) */}
           {isWide && (
             <View style={[s.sideCard, { borderColor: tone.border, backgroundColor: tone.bg }]}>
@@ -531,11 +552,10 @@ export default function HodClassesScreen() {
                 pointerEvents="none"
               />
 
-              <Text style={[s.cardTitle, { color: tone.text }]}>Manage Years</Text>
-              <Text style={[s.cardSub, { color: tone.text, opacity: 0.9 }]}>
-                Switch the academic year to view, create, or clean up its classes.
-              </Text>
-              <View style={[s.yearButtons, { flexWrap: "wrap" }]}>
+            <Text style={[s.cardTitle, { color: tone.text, textAlign: "center" }]}>Manage Years</Text>
+<Text style={[s.cardSub, { color: tone.text, opacity: 0.9, textAlign: "center" }]}>Switch the academic year to view, create, or clean up its classes.</Text>
+<View style={[s.yearButtons, { flexWrap: "wrap", justifyContent: "center" }]}>
+
                 {[1, 2, 3, 4].map((year) => (
                   <Pill
                     key={year}
@@ -554,7 +574,8 @@ export default function HodClassesScreen() {
             style={[
               s.card,
               s.manageCard,
-              { flex: 1, minWidth: 320, borderColor: tone.border, backgroundColor: tone.bg }
+              // THE CODE CHANGED PART — responsive manage card
+              { flex: 1, borderColor: tone.border, backgroundColor: tone.bg, ...(isPhone ? { width: "100%", minWidth: undefined, padding: 14 } : { minWidth: 320 }) }
             ]}
           >
             <View style={[s.ribbon, { backgroundColor: tone.dot }]} />
@@ -566,21 +587,14 @@ export default function HodClassesScreen() {
               pointerEvents="none"
             />
 
-            <Text style={[s.cardTitle, { color: tone.text }]}>Manage Year {selectedYear}</Text>
-            <Text style={[s.cardSub, { color: tone.text, opacity: 0.9 }]}>
-              Create new sections or clean up classes for this year.
-            </Text>
+            {/* THE CODE CHANGED PART — smaller fonts on phones */}
+<Text style={[s.cardTitle, { color: tone.text, textAlign: "center" }, isPhone && { fontSize: 18 }]}>Manage Year {selectedYear}</Text>
+<Text style={[s.cardSub, { color: tone.text, opacity: 0.9, textAlign: "center" }, isPhone && { fontSize: 13, lineHeight: 18 }]}>Create new sections or clean up classes for this year.</Text>
 
-            <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
-              <GlowButton icon="plus-circle" label=" Create Class(es)" onPress={openCreateModal} />
-              <GlowButton
-                icon="trash-2"
-                label={`Delete All (Year ${selectedYear})`}
-                onPress={() => setConfirmDeleteAll(true)}
-                variant="dangerOutline"
-                style={{ minWidth: 160 }}
-              />
-            </View>
+            <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap", justifyContent: "center", alignItems: "center" }}>
+  <GlowButton icon="plus-circle" label=" Create Class(es)" onPress={openCreateModal} style={{ alignSelf: "center" }} />
+  <GlowButton icon="trash-2" label={`Delete All (Year ${selectedYear})`} onPress={() => setConfirmDeleteAll(true)} variant="dangerOutline" style={{ minWidth: 160, alignSelf: "center" }} />
+</View>
           </View>
         </View>
 
@@ -595,7 +609,9 @@ export default function HodClassesScreen() {
             />
 
             {/* Pills: ALL / ACTIVE / ARCHIVED — tinted */}
-            <View style={s.filterGroup}>
+            {/* THE CODE CHANGED PART — let filter pills wrap on phone */}
+            <View style={[s.filterGroup, isPhone && { flexWrap: "wrap", alignSelf: "center" }]}>
+
               {(["all", "active", "archived"] as const).map((key) => (
                 <Pill
                   key={key}
@@ -735,47 +751,46 @@ export default function HodClassesScreen() {
             ) : (
               filteredClasses.map((c) => (
                 <View key={c.id} style={s.mobileCard}>
-                  <View style={s.mobileTitleRow}>
-                    <View style={[s.clsIcon, { width: 30, height: 30 }]}>
-                      <MaterialCommunityIcons name="book-outline" size={16} color="#fff" />
-                    </View>
-                    <Text style={[s.classTxt, { fontSize: 16 }]}>CSE {c.section}</Text>
-                    <View style={{ flex: 1 }} />
-                    <View style={[s.badge, (c.status ?? "active") === "active" ? s.badgeGreen : s.badgeGray]}>
-                      <View style={[styles.dot, (c.status ?? "active") === "active" ? styles.dotGreen : styles.dotGray]} />
-                      <Text style={[s.badgeTxt, (c.status ?? "active") === "active" ? s.badgeTxtGreen : s.badgeTxtGray]}>
-                        {c.status ?? "active"}
-                      </Text>
-                    </View>
-                  </View>
+  {/* Top Row: Class + Mentors + Status */}
+  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+    {/* Class */}
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+      <View style={[s.clsIcon, { width: 30, height: 30 }]}>
+        <MaterialCommunityIcons name="book-outline" size={16} color="#fff" />
+      </View>
+      <Text style={[s.classTxt, { fontSize: 16 }]}>CSE {c.section}</Text>
+    </View>
 
-                  <View style={{ marginTop: 6 }}>
-                    {c.mentors?.length ? (
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                        {c.mentors.slice(0, 2).map((m, i) => (
-                          <View key={i} style={s.chip}>
-                            <Feather name="user" size={12} color="#334155" style={{ marginRight: 6 }} />
-                            <Text style={s.chipTxt}>{m.name || m.email}</Text>
-                          </View>
-                        ))}
-                        {c.mentors.length > 2 && (
-                          <View style={[s.chip, { backgroundColor: "#EEF2FF", borderColor: "#E0E7FF" }]}>
-                            <Text style={[s.chipTxt, { color: "#4338CA" }]}>
-                              +{c.mentors.length - 2}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    ) : (
-                      <Text style={[s.cellText, { color: "#94A3B8", fontStyle: "italic" }]}>—</Text>
-                    )}
-                  </View>
+    {/* Mentors */}
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center", flex: 1 }}>
+      {c.mentors?.length ? (
+        c.mentors.slice(0, 2).map((m, i) => (
+          <View key={i} style={s.chip}>
+            <Feather name="user" size={12} color="#334155" style={{ marginRight: 6 }} />
+            <Text style={s.chipTxt}>{m.name || m.email}</Text>
+          </View>
+        ))
+      ) : (
+        <Text style={[s.cellText, { color: "#94A3B8", fontStyle: "italic" }]}>—</Text>
+      )}
+    </View>
 
-                  <View style={s.mobileActions}>
-                    <GlowButton label="Edit mentors" icon="edit-2" onPress={() => openEditMentors(c)} variant="ghost" style={{ flex: 1 }} />
-                    <GlowButton label="Delete" icon="trash-2" onPress={() => askDelete(c.id, `CSE ${c.section} (Year ${c.year})`)} variant="dangerOutline" style={{ flex: 1 }} />
-                  </View>
-                </View>
+    {/* Status */}
+    <View style={[s.badge, (c.status ?? "active") === "active" ? s.badgeGreen : s.badgeGray]}>
+      <View style={[styles.dot, (c.status ?? "active") === "active" ? styles.dotGreen : styles.dotGray]} />
+      <Text style={[s.badgeTxt, (c.status ?? "active") === "active" ? s.badgeTxtGreen : s.badgeTxtGray]}>
+        {c.status ?? "active"}
+      </Text>
+    </View>
+  </View>
+
+  {/* Centered Actions */}
+  <View style={{ flexDirection: "row", justifyContent: "center", gap: 12, marginTop: 12 }}>
+    <GlowButton label="Edit mentors" icon="edit-2" onPress={() => openEditMentors(c)} variant="ghost" style={{ minWidth: 140 }} />
+    <GlowButton label="Delete" icon="trash-2" onPress={() => askDelete(c.id, `CSE ${c.section} (Year ${c.year})`)} variant="dangerOutline" style={{ minWidth: 120 }} />
+  </View>
+</View>
+
               ))
             )}
           </View>
@@ -1006,8 +1021,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#000080",
     backgroundColor: "#F8FAFC",
+    shadowOpacity: 0,   // remove shadow
+    elevation: 0,       // no elevation (Android)
   },
-  pillActive: { backgroundColor: "#000080", borderColor: "#000080" },
+  pillActive: { backgroundColor: "#000080", borderColor: "#000080", shadowOpacity: 0, elevation: 0 },
   pillText: { fontSize: 13, fontWeight: "700", color: "#475569" },
   pillTextActive: { color: "#FFFFFF" },
   // Search
@@ -1031,52 +1048,17 @@ const s = StyleSheet.create({
   /* layout */
   container: { padding: 16, gap: 16, backgroundColor: "#F8FAFC" },
   /* header (shorter + back + sign out) */
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#000080",
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2
-  },
+  header: { paddingHorizontal: 20, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#000080", backgroundColor: "#FFFFFF", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
   headerContent: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" },
   headerLeft: { flexDirection: "row", alignItems: "center", flex: 1, gap: 10 },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#000080",
-    backgroundColor: "#FFFFFF",
-  },
-  iconContainer: {
-    width: 40, height: 40,
-    backgroundColor: "#1E3A8A",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 8
-  },
+  backBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: "#000080", backgroundColor: "#FFFFFF" },
+  iconContainer: { width: 40, height: 40, backgroundColor: "#1E3A8A", borderRadius: 12, justifyContent: "center", alignItems: "center", marginRight: 8 },
   titleContainer: { flex: 1, minWidth: 160 },
   title: { fontSize: 22, fontWeight: "800", color: "#1E293B", marginBottom: 2 },
   subtitle: { fontSize: 13, color: "#64748B", fontWeight: "500" },
 
   // sign out
-  dangerBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: "#ef4444",
-    borderWidth: 1,
-    borderColor: "#dc2626",
-  },
+  dangerBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: "#ef4444", borderWidth: 1, borderColor: "#dc2626" },
   dangerBtnTxt: { color: "#fff", fontWeight: "800" },
 
   topRow: { flexDirection: "row", alignItems: "stretch", gap: 16, flexWrap: "wrap" },
@@ -1088,8 +1070,6 @@ const s = StyleSheet.create({
 
   cardTitle: { fontSize: 20, fontWeight: "800", color: "#1E293B", marginBottom: 4 },
   cardSub: { color: "#64748B", fontSize: 15, lineHeight: 22 },
-
-  yearButtons: { flexDirection: "row", gap: 8 },
 
   table: { borderWidth: 1.5, borderColor: "#000080", borderRadius: 16, overflow: "hidden", backgroundColor: "#FFFFFF", shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   thead: { backgroundColor: "#F8FAFC", flexDirection: "row", paddingHorizontal: 16, paddingVertical: 16, gap: 12, borderBottomWidth: 2, borderBottomColor: "#000080" },
@@ -1155,6 +1135,14 @@ const s = StyleSheet.create({
   classTxt: { color: "#0f172a", fontSize: 18, fontWeight: "800" },
   clsIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: "rgb(14, 7, 122)", alignItems: "center", justifyContent: "center" },
   mobileActions: { flexDirection: "row", gap: 8, marginTop: 8 },
+
+  /* NEW one-line styles for mobile year bar */
+  yearBarMobile: { width: "100%", borderWidth: 1.5, borderRadius: 14, padding: 12, gap: 10 as any, backgroundColor: "#FFFFFF", shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+
+  yearButtons: { flexDirection: "row", gap: 8 }, // (unchanged, used on desktop; we center via inline justifyContent)
+yearBarTitle: { fontSize: 16, fontWeight: "800", textAlign: "center" }, // <- center title text on mobile bar
+yearButtonsMobile: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 8 as any }, // <- center pills on mobile
+
 })
 
 const sEM = StyleSheet.create({

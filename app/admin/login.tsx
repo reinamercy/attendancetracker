@@ -1,14 +1,16 @@
 // app/admin/login.tsx
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import {
+  EmailAuthProvider,
   fetchSignInMethodsForEmail,
   getRedirectResult,
   GoogleAuthProvider,
+  linkWithCredential,
   signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
-  signOut,
+  signOut
 } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import React, { useState } from 'react'
@@ -143,24 +145,47 @@ export default function AdminLogin() {
   }
 
   // Handle Google redirect result on web (fixes flicker → stay)
-  React.useEffect(() => {
-    if (Platform.OS !== 'web') return
-    ;(async () => {
-      try {
-        const res = await getRedirectResult(auth)
-        if (!res) return
-        const e = (res.user.email ?? '').toLowerCase()
-        if (!ALLOWED.test(e)) {
-          await signOut(auth)
-          show('Access blocked', 'Only emails ending with @citchennai.net are allowed.')
-          return
-        }
-        await finishLogin(e)
-      } catch (err: any) {
-        show('Google sign-in failed', err?.message || String(err))
+  // 🔧 UPDATED: handle post-redirect + optional password linking
+React.useEffect(() => {
+  if (Platform.OS !== 'web') return
+  ;(async () => {
+    try {
+      const res = await getRedirectResult(auth)
+      if (!res) return
+
+      const e = (res.user.email ?? '').toLowerCase()
+      if (!ALLOWED.test(e)) {
+        await signOut(auth)
+        show('Access blocked', 'Only emails ending with @citchennai.net are allowed.')
+        return
       }
-    })()
-  }, [])
+
+      // If we stored a password before redirect, link it now (Google-only → add password)
+      const storedEmail = sessionStorage.getItem('login_email') || ''
+      const storedPw = sessionStorage.getItem('login_pw') || ''
+      sessionStorage.removeItem('login_email')
+      sessionStorage.removeItem('login_pw')
+
+      if (storedEmail && storedPw && storedEmail === e) {
+        const methods = await fetchSignInMethodsForEmail(auth, e)
+        if (!methods.includes('password')) {
+          try {
+            const cred = EmailAuthProvider.credential(e, storedPw)
+            await linkWithCredential(res.user, cred)
+            show('Password linked', 'You can also login with email & password now.')
+          } catch (err: any) {
+            // If it was already linked in the meantime, ignore
+          }
+        }
+      }
+
+      await finishLogin(e)
+    } catch (err: any) {
+      show('Google sign-in failed', err?.message || String(err))
+    }
+  })()
+}, [])
+
 
   const handleLogin = async () => {
     const e = email.trim().toLowerCase()
@@ -207,28 +232,54 @@ export default function AdminLogin() {
   const handleGoogle = async () => {
     try {
       if (Platform.OS === 'web') {
-        const provider = new GoogleAuthProvider()
-        provider.setCustomParameters({
-          prompt: 'select_account consent',
-          hd: 'citchennai.net', // hint; still validate
-        })
+  const provider = new GoogleAuthProvider()
+  provider.setCustomParameters({ prompt: 'select_account consent', hd: 'citchennai.net' })
+
+  try {
+    const cred = await signInWithPopup(auth, provider)
+    const e = (cred.user.email ?? '').toLowerCase()
+    if (!ALLOWED.test(e)) {
+      await signOut(auth)
+      show('Access blocked', 'Only emails ending with @citchennai.net are allowed.')
+      return
+    }
+
+    // 🔧 NEW: if account is Google-only and user typed a valid password, link it
+    const eTrim = e
+    const pTrim = (password || '').trim()
+    if (pTrim.length >= 6) {
+      const methods = await fetchSignInMethodsForEmail(auth, eTrim)
+      if (!methods.includes('password')) {
         try {
-          const cred = await signInWithPopup(auth, provider)
-          const e = (cred.user.email ?? '').toLowerCase()
-          if (!ALLOWED.test(e)) {
-            await signOut(auth)
-            Alert.alert('Access blocked', 'Only emails ending with @citchennai.net are allowed.')
-            return
-          }
-          return finishLogin(e)
+          const pwCred = EmailAuthProvider.credential(eTrim, pTrim)
+          await linkWithCredential(auth.currentUser!, pwCred)
+          show('Password linked', 'You can also login with email & password now.')
         } catch (err: any) {
-          if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/popup-closed-by-user') {
-            await signInWithRedirect(auth, provider)
-            return
-          }
-          throw err
+          // ignore if already linked or canceled
         }
       }
+    } else {
+      // If no password typed and password not linked, give a hint
+      
+    }
+
+    return finishLogin(e)
+  } catch (err: any) {
+    if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/popup-closed-by-user') {
+      // 🔧 NEW: store intent so the post-redirect handler can link the password
+      const eTrim = (email || '').trim().toLowerCase()
+      const pTrim = (password || '').trim()
+      if (eTrim && pTrim.length >= 6) {
+        sessionStorage.setItem('login_email', eTrim)
+        sessionStorage.setItem('login_pw', pTrim)
+      }
+      await signInWithRedirect(auth, provider)
+      return
+    }
+    throw err
+  }
+}
+
 
       // ---- Native (Android/iOS) via AuthSession proxy
       const res = await (promptAsync as any)({

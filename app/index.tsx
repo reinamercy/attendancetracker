@@ -265,9 +265,13 @@ export default function Landing() {
             </Animated.View>
 
             <Animated.View style={{ transform: [{ scale: buttonScale1 }] }}>
-              <TouchableOpacity onPress={() => router.push("/hod")} style={[s.btn, s.btnHOD]} activeOpacity={0.8}>
-                <Text style={s.btnTxtHOD}>HOD</Text>
-              </TouchableOpacity>
+              <TouchableOpacity
+  onPress={() => router.push("/hod/login")}   // CHANGED: was "/hod"
+  style={[s.btn, s.btnHOD]}
+  activeOpacity={0.8}
+>
+  <Text style={s.btnTxtHOD}>HOD</Text>
+</TouchableOpacity>
             </Animated.View>
 
             <Animated.View style={{ transform: [{ scale: buttonScale2 }] }}>
