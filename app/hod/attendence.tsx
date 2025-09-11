@@ -63,7 +63,7 @@ type AttendanceDoc = {
   dept?: string;
   section?: string;
   year?: number | null;
-  counts?: { present: number; absent: number };
+  counts?: { present: number; absent: number; late?: number };
   lockUntil?: string;
   lockUntilTs?: Timestamp;
   isLocked?: boolean;
@@ -76,6 +76,7 @@ type ClassTile = {
   year: number | null;
   present: number;
   absent: number;
+  late?: number;  
   totalStudents: number; // roster size
   attDocId?: string;
 };
@@ -194,7 +195,10 @@ export default function HodAttendance() {
             dept: data?.dept ?? DEPARTMENT,
             section: (data?.section ?? "").toString(),
             year: typeof data?.year === "number" ? data.year : null,
-            counts: data?.counts ?? { present: 0, absent: 0 },
+            counts: data?.counts
+  ? { present: data.counts.present || 0, absent: data.counts.absent || 0, late: data.counts.late || 0 }
+  : { present: 0, absent: 0, late: 0 },
+
             lockUntil: (data?.lockUntil ?? "").toString(),
             lockUntilTs: data?.lockUntilTs,
             isLocked: !!data?.isLocked,
@@ -303,6 +307,7 @@ export default function HodAttendance() {
         year: typeof c.year === "number" ? c.year : yearByCanon.get(legacyCanon) ?? null,
         present: counts.present || 0,
         absent: counts.absent || 0,
+        late: counts.late || 0,
         totalStudents: 0,
         attDocId: att?.id,
       };
@@ -379,6 +384,13 @@ export default function HodAttendance() {
     }
     return { present: p, absent: a };
   }, [baseTiles, year]);
+const kpiLate = useMemo(() => {
+  const wantYear = year === "All" ? null : Number(year);
+  const list = baseTiles.filter((t) => wantYear === null || t.year === wantYear);
+  let l = 0;
+  for (const t of list) l += t.late || 0;
+  return l;
+}, [baseTiles, year]);
 
   // Year-wise totals for stacked bars (derived from tiles; works with yearful mapping)
   const yearTotals = useMemo(() => {
@@ -491,7 +503,7 @@ export default function HodAttendance() {
   };
 
   /* ---------------------- visuals derived ---------------------- */
-  const marked = kpiPA.present + kpiPA.absent;
+  const marked = kpiPA.present + kpiPA.absent + kpiLate;
   const coveragePct = percent(marked, totalStudentsSum);
   const presentPct = percent(kpiPA.present, Math.max(1, marked));
 
@@ -569,6 +581,7 @@ export default function HodAttendance() {
           <KPIGradient label="Total Students" value={totalStudentsSum} colors={["#dbeafe", "#bfdbfe"]} />
           <KPIGradient label="Present" value={kpiPA.present} colors={["#bbf7d0", "#a7f3d0"]} />
           <KPIGradient label="Absent" value={kpiPA.absent} colors={["#fecaca", "#fee2e2"]} />
+          <KPIGradient label="Late" value={kpiLate} colors={["#fef9c3", "#fde68a"]} />
         </View>
 
         {/* coverage + present% */}
@@ -637,10 +650,23 @@ export default function HodAttendance() {
                   tone={tone}
                   badge={t.year ? `Y${t.year}` : undefined}
                   fullWidth={isPhone}
+                  onPress={() => {
+    const display = t.year ? `${t.DISPLAY} (Year ${t.year})` : t.DISPLAY;
+    router.push({
+      pathname: "/admin/attendance",
+      params: {
+        cls: display,          // for header text in Admin
+        clsCanon: t.CANON,     // yearful canon used for loading
+        year: t.year ? String(t.year) : "",  // optional
+        // mentor: "HOD",      // optional; add if you want it in Admin header
+      },
+    });
+  }}
                 >
                   <Row label="Total Students" value={t.totalStudents} />
                   <Row label="Present" value={t.present} />
                   <Row label="Absent" value={t.absent} />
+                  <Row label="Late" value={t.late ?? 0} />
 
                   <View style={{ marginTop: 8 }}>
                     <MiniBar value={t.present} max={Math.max(1, t.totalStudents)} leftLabel="Present %" accent="#60a5fa" />
@@ -741,14 +767,22 @@ function Row({ label, value }: { label: string; value: number | string }) {
 }
 
 function TileCard({
-  title, children, index, tone, badge, fullWidth,
+  title,
+  children,
+  index,
+  tone,
+  badge,
+  fullWidth,
+  onPress,          // ← add this
 }: React.PropsWithChildren<{
   title: string;
   index: number;
   tone?: { bg: string; border: string; text: string };
   badge?: string;
   fullWidth?: boolean;
+  onPress?: () => void;
 }>) {
+
   const t = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(t, { toValue: 1, duration: 300, delay: index * 40, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
@@ -756,29 +790,30 @@ function TileCard({
 
   return (
     <Animated.View
-      style={[
-        s.tile,
-        fullWidth ? { width: "100%" } : { width: 240 },
-        tone && { backgroundColor: tone.bg, borderColor: tone.border },
-        {
-          opacity: t,
-          transform: [
-            { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
-            { scale: t.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1] }) },
-          ],
-        },
-      ]}
-    >
-      {/* Badge */}
-      {!!badge && (
-        <View style={[s.badge, tone && { backgroundColor: tone.border }]}>
-          <Text style={s.badgeTxt}>{badge}</Text>
-        </View>
-      )}
+  style={[
+    s.tile,
+    fullWidth ? { width: "100%" } : { width: 240 },
+    tone && { backgroundColor: tone.bg, borderColor: tone.border },
+    {
+      opacity: t,
+      transform: [
+        { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+        { scale: t.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1] }) },
+      ],
+    },
+  ]}
+>
+  <TouchableOpacity activeOpacity={0.9} onPress={onPress} disabled={!onPress}>
+    {!!badge && (
+      <View style={[s.badge, tone && { backgroundColor: tone.border }]}>
+        <Text style={s.badgeTxt}>{badge}</Text>
+      </View>
+    )}
+    <Text style={[s.tileTitle, tone && { color: tone.text }]}>{title}</Text>
+    {children}
+  </TouchableOpacity>
+</Animated.View>
 
-      <Text style={[s.tileTitle, tone && { color: tone.text }]}>{title}</Text>
-      {children}
-    </Animated.View>
   );
 }
 
@@ -859,7 +894,10 @@ async function refetch(dateKey: string, setLoading: (b: boolean) => void, setAtt
         dept: data?.dept ?? DEPARTMENT,
         section: (data?.section ?? "").toString(),
         year: typeof data?.year === "number" ? data.year : null,
-        counts: data?.counts ?? { present: 0, absent: 0 },
+        counts: data?.counts
+  ? { present: data.counts.present || 0, absent: data.counts.absent || 0, late: data.counts.late || 0 }
+  : { present: 0, absent: 0, late: 0 },
+
         lockUntil: (data?.lockUntil ?? "").toString(),
         lockUntilTs: data?.lockUntilTs,
         isLocked: !!data?.isLocked,
