@@ -201,13 +201,7 @@ export default function Landing() {
       Animated.timing(buttonScale1, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start(() => router.push("/admin/login"))
   }
-  const handleStudentPress = () => {
-    Animated.sequence([
-      Animated.timing(buttonScale2, { toValue: 0.95, duration: 100, useNativeDriver: true }),
-      Animated.timing(buttonScale2, { toValue: 1.05, duration: 150, useNativeDriver: true }),
-      Animated.timing(buttonScale2, { toValue: 1, duration: 100, useNativeDriver: true }),
-    ]).start(() => router.push("/student/login"))
-  }
+
 
   return (
     <GestureHandlerRootView style={s.gradient}>
@@ -275,9 +269,6 @@ export default function Landing() {
             </Animated.View>
 
             <Animated.View style={{ transform: [{ scale: buttonScale2 }] }}>
-              <TouchableOpacity style={[s.btn, s.btnSecondary]} onPress={handleStudentPress} activeOpacity={0.8}>
-                <Text style={s.btnTxt}>Student</Text>
-              </TouchableOpacity>
             </Animated.View>
           </Animated.View>
         </Animated.View>

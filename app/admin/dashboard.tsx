@@ -255,35 +255,6 @@ export default function AdminDashboard() {
     await refresh(userEmail)
   }
 
-  // -------------------------
-  // DELETE (preserve NEW LOGIC: simple class delete)
-  // -------------------------
-  const performDelete = async (item: ClassItem) => {
-    try {
-      setBusyId(item.id)
-      await deleteDoc(doc(db, 'classes', item.id))
-      if (userEmail) await refresh(userEmail)
-      Alert.alert('Deleted', `"${item.name}" removed.`)
-    } catch (e: any) {
-      Alert.alert('Delete failed', e?.message ?? 'Unknown error')
-    } finally {
-      setBusyId(null)
-      setConfirmOpen(false)
-      setPending(null)
-    }
-  }
-
-  const askDelete = (item: ClassItem) => {
-    if (Platform.OS === 'web') {
-      setPending(item)
-      setConfirmOpen(true)
-    } else {
-      Alert.alert('Delete Class', `Are you sure you want to delete "${item.name}"?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => performDelete(item) },
-      ])
-    }
-  }
 
   const doSignOut = async () => {
     await signOut(auth)
@@ -406,23 +377,12 @@ export default function AdminDashboard() {
                   </Text>
                 </View>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.deleteBtn, busyId === item.id && { opacity: 0.5 }]}
-                disabled={busyId === item.id}
-                onPress={() => askDelete(item)}
-              >
-                <Text style={styles.deleteTxt}>Delete</Text>
-              </TouchableOpacity>
             </View>
           )
         }}
       />
 
       {/* Bottom big CTA */}
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
-        <Text style={styles.fabTxt}>＋ Create New Class</Text>
-      </TouchableOpacity>
 
       {/* New Class Modal */}
       <Modal visible={modalVisible} transparent animationType="fade">
@@ -457,27 +417,7 @@ export default function AdminDashboard() {
       </Modal>
 
       {/* Confirm Delete Modal (Web) */}
-      <Modal visible={confirmOpen} transparent animationType="fade">
-        <View style={styles.modalBg}>
-          <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Delete Class</Text>
-            <Text style={{ marginBottom: 12 }}>
-              Are you sure you want to delete "{pending?.name}"?
-            </Text>
-            <View style={styles.modalBtns}>
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: '#e53935' }]}
-                onPress={() => pending && performDelete(pending)}
-              >
-                <Text style={styles.modalBtnTxt}>Delete</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, styles.cancel]} onPress={() => setConfirmOpen(false)}>
-                <Text style={styles.modalBtnTxt}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      
     </SafeAreaView>
   )
 }
