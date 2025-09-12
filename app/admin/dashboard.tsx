@@ -5,8 +5,6 @@ import { onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   addDoc,
   collection,
-  deleteDoc,
-  doc,
   getDocs,
   query,
   where
@@ -18,12 +16,11 @@ import {
   Alert,
   FlatList,
   Modal,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { canonicalClassKey, yearfulCanon } from '../../constants/classKey'
@@ -284,10 +281,11 @@ export default function AdminDashboard() {
           <View style={styles.logoBadge}>
             <MaterialCommunityIcons name="school" size={18} color="#fff" />
           </View>
-          <View>
-            <Text style={styles.headerTitle}>Admin Dashboard</Text>
-            <Text style={styles.headerSub}>Logged in as: {userEmail || '-'}</Text>
-          </View>
+          <View style={styles.headerTextWrap}>
+  <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">Admin Dashboard</Text>
+  <Text style={styles.headerSub} numberOfLines={1} ellipsizeMode="tail">Logged in as: {userEmail || '-'}</Text>
+</View>
+
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={doSignOut} style={styles.signOutBtn}>
@@ -367,7 +365,7 @@ export default function AdminDashboard() {
                   <View style={styles.clsIcon}>
                     <MaterialCommunityIcons name="book-outline" size={16} color="#fff" />
                   </View>
-                  <Text style={styles.classTxt}>{item.name}</Text>
+                  <Text style={styles.classTxt} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
                 </View>
                 <View style={styles.metaRow}>
                   <Text style={styles.badge}>{getDept(item.name)}</Text>
@@ -436,19 +434,20 @@ const styles = StyleSheet.create({
   },
 
   // Header (glass)
-  headerBar: {
-    flexDirection: 'row',
+headerBar: {
+  flexDirection: 'row',
   justifyContent: 'space-between',
   alignItems: 'center',
   borderBottomWidth: 1,
   borderColor: 'rgba(226,232,240,0.8)',
   backgroundColor: 'rgba(255,255,255,0.88)',
   paddingVertical: 12,
-paddingHorizontal: 4,   // give the Sign out button breathing room
+  paddingHorizontal: 8,   // a bit more padding
   borderRadius: 12,
-overflow: 'hidden',      // clip the Sign out button to the rounded header
+  overflow: 'hidden',
   marginBottom: 14,
-  },
+},
+
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   backBtn: {
     width: 36,
@@ -471,7 +470,7 @@ overflow: 'hidden',      // clip the Sign out button to the rounded header
   },
   headerTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
   headerSub: { color: '#475569', fontSize: 12, marginTop: 2 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconBtn: {
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -494,22 +493,24 @@ overflow: 'hidden',      // clip the Sign out button to the rounded header
   signOutTxt: { color: '#FFFFFF', fontWeight: '800' },
 
   // Stats
-  stats: { flexDirection: 'row', gap: 12, marginTop: 10, marginBottom: 16 },
+  stats: { flexDirection: 'row', gap: 12, marginTop: 10, marginBottom: 16, alignItems: 'stretch' },
   statCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(226,232,240,0.8)',
-    borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    shadowColor: '#0b1220',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
-  },
-  statTitle: { color: '#64748b', fontSize: 12, fontWeight: '600', marginBottom: 6 },
+  flex: 1,
+  flexBasis: 0,     // ⬅ add
+  minWidth: 0,      // ⬅ add
+  backgroundColor: 'rgba(255,255,255,0.92)',
+  borderWidth: 1,
+  borderColor: 'rgba(226,232,240,0.8)',
+  borderRadius: 18,
+  paddingVertical: 14,
+  paddingHorizontal: 16,
+  shadowColor: '#0b1220',
+  shadowOpacity: 0.06,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 4,
+},
+statTitle: { color: '#64748b', fontSize: 12, fontWeight: '600', marginBottom: 6, flexShrink: 1 },
   statRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statValue: { color: '#0f172a', fontSize: 24, fontWeight: '800' },
   statHint: { marginTop: 6, fontSize: 11, color: '#6b7280' },
@@ -550,8 +551,7 @@ overflow: 'hidden',      // clip the Sign out button to the rounded header
     alignItems: 'center',
     justifyContent: 'center',
   },
-  classTxt: { color: '#0f172a', fontSize: 18, fontWeight: '800' },
-
+classTxt: { color: '#0f172a', fontSize: 18, fontWeight: '800', minWidth: 0, flexShrink: 1 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   badge: {
     paddingVertical: 4,
@@ -651,6 +651,7 @@ overflow: 'hidden',      // clip the Sign out button to the rounded header
   },
   cancel: { backgroundColor: '#94a3b8' },
   modalBtnTxt: { color: '#FFFFFF', fontWeight: '800', letterSpacing: 0.2 },
+  headerTextWrap: { flexShrink: 1, minWidth: 0 },
   statIconBox: {
     width: 34,
     height: 34,
