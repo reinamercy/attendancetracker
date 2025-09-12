@@ -1,7 +1,7 @@
 "use client"
 import { BlurView } from "expo-blur"
 import { useRouter } from "expo-router"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import {
   Animated,
   Dimensions,
@@ -24,12 +24,11 @@ import {
 // SVG for vector petals + gradients
 import Svg, {
   Defs,
-  Ellipse,
   G,
   Path,
   Stop,
   LinearGradient as SvgLinearGradient,
-  RadialGradient as SvgRadialGradient,
+  RadialGradient as SvgRadialGradient
 } from "react-native-svg"
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window")
@@ -78,18 +77,14 @@ function RealisticFlowerSVG() {
           </SvgRadialGradient>
         </Defs>
 
-        <Ellipse cx={cx} cy={cy} rx={HALO_RX} ry={HALO_RY} fill="url(#halo)" />
+        {/* PETALS ONLY — no halos/cores/strokes */}
+<G opacity={0.95}>
+  <Path d={petalPath} fill="url(#petalGrad)" stroke="rgba(255,255,255,0.55)" strokeWidth={2}/>
+  <Path d={petalPath} transform={`rotate(90 ${cx} ${cy})`}  fill="url(#petalGrad)" stroke="rgba(255,255,255,0.55)" strokeWidth={2}/>
+  <Path d={petalPath} transform={`rotate(180 ${cx} ${cy})`} fill="url(#petalGrad)" stroke="rgba(255,255,255,0.55)" strokeWidth={2}/>
+  <Path d={petalPath} transform={`rotate(270 ${cx} ${cy})`} fill="url(#petalGrad)" stroke="rgba(255,255,255,0.55)" strokeWidth={2}/>
+</G>
 
-        <G opacity={0.95}>
-          <Path d={petalPath} fill="url(#petalGrad)" stroke="rgba(255,255,255,0.55)" strokeWidth={2}/>
-          <Path d={petalPath} transform={`rotate(90 ${cx} ${cy})`}  fill="url(#petalGrad)" stroke="rgba(255,255,255,0.55)" strokeWidth={2}/>
-          <Path d={petalPath} transform={`rotate(180 ${cx} ${cy})`} fill="url(#petalGrad)" stroke="rgba(255,255,255,0.55)" strokeWidth={2}/>
-          <Path d={petalPath} transform={`rotate(270 ${cx} ${cy})`} fill="url(#petalGrad)" stroke="rgba(255,255,255,0.55)" strokeWidth={2}/>
-        </G>
-
-        <Ellipse cx={cx} cy={cy} rx={CORE_RX} ry={CORE_RY} fill="url(#coreGrad)" opacity={0.98}/>
-        <Ellipse cx={cx} cy={cy} rx={CORE_RX+18} ry={CORE_RY+14} fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth={3}/>
-        <Ellipse cx={cx - 85} cy={cy - 70} rx={65} ry={48} fill="rgba(255,255,255,0.65)"/>
       </Svg>
 
       {/* soft bloom */}
@@ -207,28 +202,6 @@ export default function Landing() {
     <GestureHandlerRootView style={s.gradient}>
       <PanGestureHandler onGestureEvent={onGestureEvent} onHandlerStateChange={onHandlerStateChange}>
         <Animated.View style={s.container}>
-
-          {/* Orbs follow finger */}
-          <Animated.View style={[s.orb1, { transform: [{ translateX: orb1TranslateX }, { translateY: orb1TranslateY }] }]} />
-          <Animated.View style={[s.orb2, { transform: [{ translateX: orb2TranslateX }, { translateY: orb2TranslateY }] }]} />
-
-          {/* Particles */}
-          {particleAnimations.map((p, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                s.particle,
-                {
-                  transform: [
-                    { translateX: p.baseX },
-                    { translateY: Animated.add(p.baseY, p.dy) },
-                    { scale: p.scale },
-                  ],
-                  opacity: p.opacity,
-                },
-              ]}
-            />
-          ))}
 
           {/* SVG FLOWER (background accent) */}
           <RealisticFlowerSVG />

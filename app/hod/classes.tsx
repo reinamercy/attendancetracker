@@ -624,9 +624,6 @@ export default function HodClassesScreen() {
             </View>
           </View>
 
-          <Text style={[s.toolbarCount, { color: ACCENT }]}>
-            {filteredClasses.length} result{filteredClasses.length === 1 ? "" : "s"}
-          </Text>
         </View>
 
         {/* Desktop/Wide: table; Phone: cards */}

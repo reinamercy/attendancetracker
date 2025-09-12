@@ -543,13 +543,13 @@ const kpiLate = useMemo(() => {
         </View>
 
         <LinearGradient colors={["#60a5fa", "#34d399"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.header, isPhone && { padding: 12 }]}>
-          <View style={[s.headerControls, isPhone && { flexDirection: "column", alignItems: "stretch", gap: 8 }]}>
-            <View style={[s.dateBadge, isPhone && { alignSelf: "flex-start" }]}>
+          <View style={[s.headerControls, isPhone && s.headerControlsPhone]}>
+            <View style={[s.dateBadge, isPhone && s.dateBadgePhone]}>
               <Text style={s.dateLabel}>Date (IST)</Text>
               <Text style={s.dateValue}>{fmtDateKey(dateKey)}</Text>
             </View>
 
-            <View style={[s.navBtns, isPhone && { alignSelf: "stretch", justifyContent: "space-between" }]}>
+            <View style={[s.navBtns, isPhone && s.navBtnsPhone]}>
               <Pill onPress={() => setDateKey(shiftDate(dateKey, -1))} label="Prev" />
               <Pill onPress={() => setDateKey(todayIstKey())} label="Today" />
               <Pill onPress={() => setDateKey(shiftDate(dateKey, +1))} label="Next" />
@@ -558,13 +558,25 @@ const kpiLate = useMemo(() => {
           </View>
 
           {/* year chips */}
-          <View style={[s.yearRow, isPhone && { marginTop: 10 }]}>
-            {(["All", "1", "2", "3", "4"] as const).map((y) => (
-              <TouchableOpacity key={y} onPress={() => setYear(y)} style={[s.yearBtn, year === y && s.yearBtnActive]}>
-                <Text style={[s.yearText, year === y && s.yearTextActive]}>{y === "All" ? "All Years" : `${y} Year`}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* year chips — single line; scrolls on mobile if needed */}
+<ScrollView
+  horizontal
+  showsHorizontalScrollIndicator={false}
+  contentContainerStyle={[s.yearRowH, isPhone && { paddingVertical: 2 }]}
+>
+  {(["All", "1", "2", "3", "4"] as const).map((y) => (
+    <TouchableOpacity
+      key={y}
+      onPress={() => setYear(y)}
+      style={[s.yearBtn, year === y && s.yearBtnActive]}
+    >
+      <Text style={[s.yearText, year === y && s.yearTextActive]}>
+        {y === "All" ? "All Years" : `${y} Year`}
+      </Text>
+    </TouchableOpacity>
+  ))}
+</ScrollView>
+
         </LinearGradient>
       </Animated.View>
 
@@ -943,6 +955,14 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e5e7eb",
   },
+  yearRowH: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 8,
+  marginTop: 12,
+  paddingRight: 4, // a bit of end padding for scroll
+},
+
   dateLabel: { color: "#374151", fontSize: 12 },
   dateValue: { color: "#111827", fontWeight: "700", fontSize: 14 },
 
@@ -1031,6 +1051,26 @@ const s = StyleSheet.create({
     borderColor: "#111827",
     backgroundColor: "#FFFFFF",
   },
+  headerControlsPhone: {
+  // still a ROW on phones; just tighter spacing
+  gap: 8,
+},
+
+navBtnsPhone: {
+  flex: 1,
+  flexDirection: "row",
+  justifyContent: "flex-end",
+  flexWrap: "nowrap",
+  gap: 8,
+  minWidth: 0,
+},
+
+dateBadgePhone: {
+  maxWidth: "52%",      // date can shrink, never pushes buttons out
+  flexShrink: 1,
+  minWidth: 0,
+},
+
 
   signOutBtn: {
     paddingVertical: 8,
